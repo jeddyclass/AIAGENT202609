@@ -1,0 +1,19 @@
+# .env
+# ── 本地 (Local) OpenWebUI 參數 ──
+OPENWEBUI_BASE_URL="http://172.10.0.22:8080/api"
+OPENWEBUI_API_URL="http://172.10.0.22:8080/api/chat/completions"
+OPENWEBUI_API_KEY="sk-1540f219fcb246b9bb55c7951491c01b"
+#MODEL_NAME="gemma4_26b_nothink:latest"
+LOCAL_MODEL_NAME="gemma4:12b"
+
+# ── 雲端 (Cloud) Google Gemini 參數 ──
+GEMINI_API_KEY="AIzaSyYourGeminiAPIKeyHere"
+GEMINI_MODEL_NAME="gemini-2.5-flash"
+
+# ── Telegram 參數 ──
+TG_BOT_TOKEN="YOUR-TELEGRAMBOT-TOKEN"
+TG_CHAT_ID="YOUR-CHAT-ID"
+
+# ── 多時段排程設定（以逗號分隔，24小時制 HH:MM，可任意增刪） ── 
+SCHEDULE_TIMES="04:30, 08:00, 11:30, 16:15, 21:00"
+TIMEZONE="Asia/Taipei"

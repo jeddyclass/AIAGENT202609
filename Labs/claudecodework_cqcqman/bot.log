@@ -1,0 +1,22 @@
+2026-09-22 09:59:55,698 - ADK2_FinanceService - INFO - 🚀 Google ADK 2.0 服務啟動模式: 【LOCAL】
+2026-09-22 09:59:55,964 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-22 09:59:55,964 - ADK2_FinanceService - INFO - 📅 定時排程掛載: 04:30
+2026-09-22 09:59:55,964 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-22 09:59:55,965 - ADK2_FinanceService - INFO - 📅 定時排程掛載: 08:00
+2026-09-22 09:59:55,965 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-22 09:59:55,965 - ADK2_FinanceService - INFO - 📅 定時排程掛載: 11:30
+2026-09-22 09:59:55,965 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-22 09:59:55,966 - ADK2_FinanceService - INFO - 📅 定時排程掛載: 16:15
+2026-09-22 09:59:55,966 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-22 09:59:55,966 - ADK2_FinanceService - INFO - 📅 定時排程掛載: 21:00
+2026-09-22 09:59:55,966 - ADK2_FinanceService - INFO - ⚡ Telegram 服務監聽中 (模式: LOCAL)...
+2026-09-22 09:59:57,706 - apscheduler.scheduler - INFO - Added job "scheduled_push_job" to job store "default"
+2026-09-22 09:59:57,706 - apscheduler.scheduler - INFO - Added job "scheduled_push_job" to job store "default"
+2026-09-22 09:59:57,707 - apscheduler.scheduler - INFO - Added job "scheduled_push_job" to job store "default"
+2026-09-22 09:59:57,707 - apscheduler.scheduler - INFO - Added job "scheduled_push_job" to job store "default"
+2026-09-22 09:59:57,707 - apscheduler.scheduler - INFO - Added job "scheduled_push_job" to job store "default"
+2026-09-22 09:59:57,708 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-22 09:59:57,708 - telegram.ext.Application - INFO - Application started
+2026-09-22 10:00:10,354 - ADK2_FinanceService - INFO - ⚡ [ADK 2.0 Node Hook] 進入 Agent 節點: finance_director_agent
+2026-09-22 10:01:46,661 - ADK2_FinanceService - INFO - 🛠️ [ADK 2.0 Tool] 執行 search_finance_rss: '2330'
+2026-09-22 10:02:12,463 - ADK2_FinanceService - INFO - ✅ [ADK 2.0 Node Hook] 完成 Agent 節點執行: finance_director_agent

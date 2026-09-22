@@ -1,0 +1,979 @@
+Multi-Rate Mixture of Experts for Accelerating Liquid Neural Network Training
+Shilong Zong1  Almuatazbellah Boker2  Hoda Eldardiry1
+1Department of Computer Science, Virginia Tech
+2Department of Electrical and Computer Engineering, Virginia Tech
+Blacksburg, VA 24061 USA shilongz@vt.edu  boker@vt.edu  hdardiry@vt.edu
+(April 2026)
+Abstract
+Multivariate time-series data often exhibit complex temporal dependencies, irregular sampling, and heterogeneous dynamics across multiple time scales, making accurate sequence modeling particularly challenging. Traditional recurrent neural networks (RNNs), such as Long Short-Term Memory (LSTM) networks, operate in discrete time and may struggle to effectively capture continuous and irregular temporal behaviors. Liquid Neural Networks (LNNs) address some of these limitations through continuous-time dynamics, but standard LNN architectures typically rely on a single dynamical system, limiting their ability to model heterogeneous temporal patterns. To address these challenges, we propose a Multi-Rate Mixture-of-Experts (MR-MoE) framework built on top of Liquid Neural Networks. In the proposed architecture, multiple LNN-based experts operate at distinct time scales, enabling the model to explicitly separate fast-changing dynamics from slow-evolving temporal trends. A gating network further enables adaptive expert specialization based on input conditions. In addition, we incorporate both feature-level and temporal attention mechanisms to improve robustness, interpretability, and long-range dependency modeling. Feature-level attention suppresses noisy or irrelevant variables, while temporal attention selectively focuses on informative historical states. We evaluate the proposed framework on a complex multivariate time-series prediction task and compare it against strong baselines, including LSTM, monolithic LNN, and standard MoE models. Experimental results demonstrate that the proposed MR-MoE framework consistently achieves improved AUROC and AUPRC performance while maintaining favorable computational efficiency. These results highlight the effectiveness of combining continuous-time dynamics, multi-scale expert decomposition, and adaptive attention mechanisms for time-series modeling.
+
+1Introduction
+Multivariate time-series data are widely encountered in many real-world applications and are often characterized by complex temporal dependencies, irregular sampling, and significant noise. Developing models that can effectively capture these characteristics remains a fundamental challenge in time-series prediction Che et al. (2018); Moor et al. (2023).
+
+Recurrent neural networks (RNNs), such as Long Short-Term Memory (LSTM), have been widely applied to sequential and time-series modeling tasks. However, these models operate in discrete time and often struggle to capture long-range dependencies and irregular temporal dynamics. Recent studies comparing LNNs and RNNs have shown that continuous-time dynamics can provide advantages in temporal modeling, memory efficiency, and generalization ability Zong et al. (2025). Liquid Neural Networks (LNNs) address some of these limitations by modeling continuous-time dynamics through differential equations Chen et al. (2018); Hasani et al. (2021). Each differential equation is characterized by a time constant, which controls the rate of state evolution. The notion of “liquid” refers to the adaptability of these time constants, allowing the model to better capture underlying temporal dynamics Rubanova et al. (2019); Kidger et al. (2020).
+
+Nevertheless, standard LNNs typically rely on a single dynamical system, meaning that a single set of differential equations governs the evolution of the hidden state across all inputs. While this provides a compact representation, it limits the model’s ability to capture heterogeneous patterns and multi-scale temporal structures, where different underlying processes may evolve at distinct time scales. This limitation motivates the need for structured models that can explicitly separate and efficiently model different temporal scales.
+
+In addition, LNNs often incur higher computational costs due to the need for numerical integration of differential equations, which can become a bottleneck when scaling to large datasets or long time horizons. This makes efficient modeling of large-scale time-series particularly challenging.
+
+To address these challenges, we propose a structured framework that combines multi-scale modeling, expert specialization, and attention mechanisms. Specifically, we first introduce a Mixture-of-Experts (MoE) framework based on Liquid Neural Networks, where multiple experts improve representation capacity and capture diverse temporal patterns through expert specialization Shazeer et al. (2017). Building upon this idea, we further propose a Multi-Rate Mixture-of-Experts (MR-MoE) architecture, where experts operate at distinct time scales to explicitly separate fast-changing dynamics from slow-evolving temporal trends.
+
+Furthermore, we incorporate both feature-level and temporal attention mechanisms into the proposed framework Bahdanau et al. (2015); Choi et al. (2016). Feature-level attention identifies the most relevant input variables and suppresses noisy or irrelevant features, while temporal attention selectively focuses on informative historical states to improve long-range dependency modeling. Existing LNN-based models typically focus on either attention mechanisms or expert specialization independently Hasani et al. (2021); Shazeer et al. (2017). In contrast, the proposed framework integrates continuous-time dynamics, expert specialization, multi-scale modeling, and adaptive attention within a unified architecture. The proposed Multi-Rate-MoE framework is the only architecture that combines both attention mechanisms and MoE-based expert decomposition simultaneously.
+
+To validate the effectiveness of the proposed framework, we evaluate the model on a complex multivariate time-series prediction task. Experimental results demonstrate that the proposed method consistently outperforms strong baselines, including LSTM, monolithic LNN, and standard MoE models.
+
+Contributions.
+The main contributions of this work are summarized as follows:
+
+• We introduce a Mixture-of-Experts (MoE) framework based on Liquid Neural Networks (LNNs) for time-series modeling. By decomposing the model into multiple experts, the framework improves representation capacity and enables different experts to capture diverse temporal patterns. Compared to a single monolithic model, the MoE structure provides better flexibility, specialization, and robustness.
+• We further propose a Multi-Rate Mixture-of-Experts (MR-MoE) architecture, where different experts operate at distinct time scales. This design enables the model to explicitly separate fast-changing dynamics from slow-evolving trends, improving the modeling of heterogeneous temporal behaviors while reducing interference between different temporal processes.
+• We incorporate both feature-level and temporal attention mechanisms into the MR-MoE framework. Feature-level attention improves robustness by identifying important input variables and suppressing noisy or irrelevant features, while temporal attention enhances long-range dependency modeling by selectively focusing on informative historical states. The combination of MR-MoE and attention mechanisms further improves both prediction performance and model interpretability.
+• We demonstrate the effectiveness of the proposed approach on sepsis prediction. Experimental results show consistent improvements over strong baselines, including LSTM, monolithic LNN, and MoE models.
+2Method
+In this work, we progressively develop our model from standard sequence modeling to a structured multi-scale framework with attention mechanisms. Specifically, we begin with an LSTM baseline, extend it to continuous-time modeling via Liquid Neural Networks (LNNs), introduce a Mixture-of-Experts (MoE) architecture for specialization, incorporate the singular perturbation method to model multi-time-scale dynamics, and enhance the model with both temporal and feature-level attention mechanisms.
+
+2.1LSTM Baseline
+As a baseline, we consider Long Short-Term Memory (LSTM) networks hochreite1997long for sequence modeling. Given an input sequence 
+u
+​
+(
+t
+)
+, the hidden state is updated as Eq. 1:
+
+h
+t
+=
+LSTM
+​
+(
+h
+t
+−
+1
+,
+u
+t
+)
+(1)
+where 
+h
+t
+ denotes the hidden state at time step 
+t
+, and 
+u
+t
+ represents the input at time step 
+t
+. The prediction is obtained via Eq. 2:
+
+y
+​
+(
+t
+)
+=
+W
+​
+h
+t
+(2)
+where 
+W
+ is a learnable linear projection matrix that maps the hidden state 
+h
+t
+ to the output space. While LSTMs are effective for sequential data, they operate in discrete time and may struggle to capture complex temporal dynamics in irregular time-series data Rubanova et al. (2019); Kidger et al. (2020).
+
+2.2Liquid Neural Networks
+To better model continuous-time dynamics, we adopt Liquid Neural Networks (LNNs). The hidden state evolves according to Eq. 3:
+
+d
+​
+x
+​
+(
+t
+)
+d
+​
+t
+=
+f
+​
+(
+x
+​
+(
+t
+)
+,
+u
+​
+(
+t
+)
+;
+θ
+)
+(3)
+where 
+x
+​
+(
+t
+)
+ denotes the hidden state, 
+u
+​
+(
+t
+)
+ is the input sequence at time 
+t
+, 
+f
+​
+(
+⋅
+)
+ represents a nonlinear dynamical function parameterized by 
+θ
+, and 
+θ
+ denotes the learnable model parameters. The continuous dynamics are discretized as Eq. 4:
+
+x
+​
+(
+t
++
+Δ
+​
+t
+)
+=
+x
+​
+(
+t
+)
++
+Δ
+​
+t
+τ
+​
+f
+​
+(
+x
+​
+(
+t
+)
+,
+u
+​
+(
+t
+)
+)
+(4)
+where 
+Δ
+​
+t
+ denotes the discretization step size and 
+τ
+ is a time constant controlling the evolution speed. The output is computed as Eq. 5:
+
+y
+​
+(
+t
+)
+=
+C
+​
+x
+​
+(
+t
+)
+(5)
+where 
+C
+ is a learnable readout matrix that maps the hidden state to the output space. LNNs provide a natural framework for modeling continuous-time processes and irregular sampling patterns Chen et al. (2018); Hasani et al. (2021); Rubanova et al. (2019); Kidger et al. (2020).
+
+2.3Mixture of Experts (MoE)
+To improve model expressiveness, we introduce a Mixture-of-Experts (MoE) architecture Jacobs et al. (1991); Shazeer et al. (2017). We consider 
+K
+ experts, where each expert is implemented as a Liquid Neural Network (LNN) with its own parameters. Each expert follows the LNN dynamics described above and produces an output 
+y
+k
+​
+(
+t
+)
+ based on its hidden state. This allows different experts to capture distinct temporal patterns. A gating network determines the contribution of each expert through Eq. 6, where 
+z
+​
+(
+t
+)
+ denotes the input representation to the gating network, 
+g
+​
+(
+⋅
+)
+ is the gating function, and 
+ϕ
+ represents the learnable parameters of the gating network.
+
+π
+​
+(
+t
+)
+=
+softmax
+​
+(
+g
+​
+(
+z
+​
+(
+t
+)
+;
+ϕ
+)
+)
+(6)
+The final prediction is computed as a weighted combination of expert outputs in Eq. 7:
+
+y
+​
+(
+t
+)
+=
+∑
+k
+=
+1
+K
+π
+k
+​
+(
+t
+)
+​
+y
+k
+​
+(
+t
+)
+(7)
+where 
+π
+k
+​
+(
+t
+)
+ denotes the gating weight assigned to expert 
+k
+ at time 
+t
+.
+
+2.4Multi-Rate-Mixture of Experts (MR-MoE)
+Different temporal processes in time-series data often evolve at distinct rates. Some patterns change rapidly over short time intervals, while others evolve gradually over longer horizons. Standard MoE models do not explicitly separate these dynamics, which may limit their ability to efficiently capture heterogeneous temporal behaviors. To address this limitation, we introduce a multi-rate structure where experts operate at different time scales. Each expert is associated with a distinct time constant as Eq. 8:
+
+τ
+1
+≪
+τ
+2
+≪
+⋯
+≪
+τ
+K
+(8)
+where smaller 
+τ
+k
+ corresponds to faster dynamics and larger 
+τ
+k
+ captures slower temporal trends. Following singular perturbation theory Kokotović et al. (1999), fast experts are approximated using quasi-steady-state mappings as Eq. 9:
+
+x
+k
+​
+(
+t
+)
+≈
+h
+k
+​
+(
+x
+slow
+​
+(
+t
+)
+,
+u
+​
+(
+t
+)
+)
+(9)
+where 
+x
+slow
+​
+(
+t
+)
+ denotes the slow-scale hidden states and 
+h
+k
+​
+(
+⋅
+)
+ represents the quasi-steady-state mapping for expert 
+k
+. Slow experts evolve according to continuous dynamics in Eq. 10:
+
+d
+​
+x
+k
+​
+(
+t
+)
+d
+​
+t
+=
+f
+k
+​
+(
+x
+k
+​
+(
+t
+)
+,
+u
+​
+(
+t
+)
+)
+(10)
+where 
+f
+k
+​
+(
+⋅
+)
+ denotes the nonlinear dynamics associated with expert 
+k
+. The final output remains as Eq. 11:
+
+y
+​
+(
+t
+)
+=
+∑
+k
+=
+1
+K
+π
+k
+​
+(
+t
+)
+​
+y
+k
+​
+(
+t
+)
+(11)
+This design enables efficient modeling of both fast-changing and slow-evolving temporal patterns.
+
+2.5Multi-Rate-MoE with Attention Mechanisms (MR-MoE-Attention)
+To further improve performance and interpretability, we incorporate both feature-level and temporal attention mechanisms.
+
+Feature-level Attention.
+Given input 
+u
+​
+(
+t
+)
+∈
+ℝ
+d
+, we compute feature importance scores using Eq. 12:
+
+e
+​
+(
+t
+)
+=
+f
+att
+​
+(
+u
+​
+(
+t
+)
+)
+(12)
+where 
+f
+att
+​
+(
+⋅
+)
+ denotes the feature-attention network. The attention weights are normalized using softmax in Eq. 13:
+
+β
+j
+​
+(
+t
+)
+=
+exp
+⁡
+(
+e
+j
+​
+(
+t
+)
+)
+∑
+m
+=
+1
+d
+exp
+⁡
+(
+e
+m
+​
+(
+t
+)
+)
+(13)
+where 
+β
+j
+​
+(
+t
+)
+ denotes the attention weight assigned to feature 
+j
+ at time 
+t
+. The input is then reweighted as Eq. 14:
+
+u
+~
+​
+(
+t
+)
+=
+β
+​
+(
+t
+)
+⊙
+u
+​
+(
+t
+)
+(14)
+where 
+β
+​
+(
+t
+)
+∈
+ℝ
+d
+ denotes the feature attention vector and 
+⊙
+ represents element-wise multiplication. This mechanism acts as a soft feature selection layer, suppressing irrelevant variables and improving the signal-to-noise ratio.
+
+Temporal Attention.
+For each expert 
+k
+, we compute attention weights over historical hidden states using Eq. 15:
+
+α
+k
+​
+(
+t
+,
+i
+)
+=
+exp
+⁡
+(
+q
+k
+​
+(
+t
+)
+⊤
+​
+x
+k
+​
+(
+i
+)
+)
+∑
+j
+exp
+⁡
+(
+q
+k
+​
+(
+t
+)
+⊤
+​
+x
+k
+​
+(
+j
+)
+)
+(15)
+where 
+α
+k
+​
+(
+t
+,
+i
+)
+ denotes the attention weight assigned to the historical hidden state 
+x
+k
+​
+(
+i
+)
+ for expert 
+k
+, and 
+q
+k
+​
+(
+t
+)
+ represents the query vector at time 
+t
+ used to measure similarity between current and historical states. The context vector is computed as Eq. 16:
+
+h
+k
+​
+(
+t
+)
+=
+∑
+i
+α
+k
+​
+(
+t
+,
+i
+)
+​
+x
+k
+​
+(
+i
+)
+(16)
+where 
+h
+k
+​
+(
+t
+)
+ denotes the attention-based context vector for expert 
+k
+, computed as the weighted combination of historical hidden states. The expert output becomes Eq. 17:
+
+y
+k
+​
+(
+t
+)
+=
+C
+k
+​
+h
+k
+​
+(
+t
+)
+(17)
+where 
+C
+k
+ is the readout matrix for the 
+k
+-th expert.
+
+Final Model.
+The final prediction is given in Eq. 18:
+
+y
+​
+(
+t
+)
+=
+∑
+k
+=
+1
+K
+π
+k
+​
+(
+t
+)
+​
+y
+k
+​
+(
+t
+)
+(18)
+This framework integrates continuous-time dynamics (LNN), multi-scale modeling (Multi-Rate), expert specialization (MoE), and adaptive attention mechanisms.
+
+3Experiments
+We evaluate the proposed framework on a clinical time-series prediction task and compare it with standard baselines to demonstrate its effectiveness.
+
+3.1Dataset
+We conduct experiments on a multivariate clinical time-series dataset for sepsis prediction Moor et al. (2023). The dataset consists of physiological measurements collected from intensive care unit (ICU) patients, including vital signs and laboratory values over time. Each sample is represented as a sequence 
+u
+​
+(
+t
+)
+∈
+ℝ
+d
+, where 
+d
+ denotes the number of features. The task is to predict the onset of sepsis based on historical observations.
+
+Following standard practice, we preprocess the data by normalization and handle missing values using forward filling. The dataset is split into training, validation, and test sets Che et al. (2018).
+
+3.2Baselines
+We compare our method with the following baselines:
+
+• LSTM: A standard recurrent neural network for sequence modeling.
+• Monolithic LNN: A single Liquid Neural Network without expert decomposition.
+• MoE (LNN experts): A mixture-of-experts model where each expert is an LNN.
+• MR-MoE: The proposed multi-time-scale MoE model without attention.
+• MR-MoE-Attention: Our full model with both feature-level and temporal attention.
+3.3Implementation Details
+All models are implemented in PyTorch and trained using the Adam optimizer. The learning rate is set to 
+10
+−
+3
+ and the batch size is fixed across all experiments.
+
+For MoE-based models, we use 
+K
+=
+3
+ experts with different time constants to capture multi-scale dynamics. Each expert contains 1500 neurons in the hidden layer. The gating network is implemented as a small multi-layer perceptron.
+
+For attention modules, the feature-level attention is implemented using a two-layer MLP, and temporal attention follows a standard dot-product attention mechanism. Hyperparameters are selected based on validation performance.
+
+3.4Evaluation Metrics
+We evaluate model performance using standard classification metrics:
+
+• AUROC: Area under the receiver operating characteristic curve.
+• AUPRC: Area under the precision-recall curve.
+These metrics are widely used for imbalanced clinical prediction tasks such as sepsis detectionSaito and Rehmsmeier (2015).
+
+3.5Results
+3.5.1LSTM Baseline
+We first evaluate the LSTM baseline described in Section 2.1. A single-layer LSTM with a hidden dimension of 1500 is used for all experiments. The model is trained using binary cross-entropy loss with the Adam optimizer. The learning rate is set to 
+10
+−
+3
+, and the batch size is fixed across all experiments.
+
+As shown in Figure 1 and 2, we evaluate the model using AUROC and AUPRC. The LSTM baseline achieves an AUROC of approximately 
+0.53
+ and an AUPRC of approximately 
+0.22
+, indicating limited ability to capture complex temporal dependencies in multivariate time-series data.
+
+These results highlight the limitations of discrete-time recurrent models and motivate the use of continuous-time modeling and more structured architectures in subsequent experiments.
+
+3.5.2Monolithic LNN
+We next evaluate the monolithic Liquid Neural Network (LNN) baseline described in Section 2.2. Unlike the proposed Multi-Rate-MoE framework, this model consists of a single continuous-time dynamical system without expert decomposition.
+
+To ensure a fair comparison, we use a single LNN with a hidden dimension of 1500 and identical training settings as the LSTM baseline.
+
+As shown in Figure 3 and 4, the monolithic LNN achieves an AUROC of approximately 
+0.55
+ and an AUPRC of approximately 
+0.32
+, outperforming the LSTM baseline due to its ability to model continuous-time dynamics and irregular temporal patterns.
+
+However, the monolithic structure limits the model’s ability to capture heterogeneous and multi-scale temporal behaviors, motivating the introduction of expert decomposition in later experiments.
+
+3.5.3MoE with LNN Experts
+We further evaluate the Mixture-of-Experts (MoE) framework introduced in Section 2.3, where each expert is implemented as an independent Liquid Neural Network. The MoE structure enables different experts to specialize in distinct temporal patterns.
+
+We use 
+K
+=
+3
+ experts, each with a hidden dimension of 1500, while maintaining the same optimizer and training settings as previous experiments.
+
+As shown in Figure 5 and 6, the MoE model achieves an AUROC of approximately 
+0.58
+ and an AUPRC of approximately 
+0.36
+, outperforming both the LSTM and monolithic LNN baselines.
+
+These results demonstrate that expert specialization improves representation capacity by allowing different experts to capture diverse temporal behaviors. However, without explicit multi-scale modeling, the MoE framework may still struggle to efficiently separate dynamics across different temporal scales.
+
+3.5.4Multi-Rate-MoE
+We next evaluate the proposed Multi-Rate-MoE framework described in Section 2.4. Unlike the standard MoE model, the proposed framework explicitly assigns different time scales to different experts, enabling the model to separately capture fast-changing and slow-evolving temporal dynamics.
+
+We use 
+K
+=
+3
+ experts corresponding to fast, intermediate, and slow dynamics. Each expert has a hidden dimension of 1500, and all training settings remain identical to previous experiments for fair comparison.
+
+As shown in Figure 7 and 8, the Multi-Rate-MoE model achieves an AUROC of approximately 
+0.61
+ and an AUPRC of approximately 
+0.42
+, outperforming both the standard MoE and monolithic LNN baselines.
+
+These results demonstrate that explicitly modeling multi-time-scale dynamics significantly improves performance. By separating fast and slow processes, Multi-Rate-MoE is better able to capture heterogeneous temporal patterns and reduce interference between different temporal behaviors.
+
+3.5.5Multi-Rate-MoE with Attention
+Finally, we evaluate the proposed Multi-Rate-MoE framework augmented with both feature-level and temporal attention mechanisms, as described in Section 2.5. These attention modules enable the model to selectively focus on relevant input variables and informative historical states.
+
+Feature-level attention improves robustness by suppressing noisy or irrelevant variables, while temporal attention enhances long-range dependency modeling by focusing on important historical information.
+
+As shown in Figure 9 and 10, the Multi-Rate-MoE model with attention achieves an AUROC of approximately 
+0.65
+ and up to 
+0.68
+ when both attention mechanisms are fully incorporated. The corresponding AUPRC reaches approximately 
+0.45
+, outperforming all previous baselines.
+
+These results demonstrate that attention mechanisms provide additional gains beyond multi-scale modeling. In particular, feature-level attention improves the signal-to-noise ratio by reducing the influence of irrelevant inputs, while temporal attention improves the model’s ability to capture long-range temporal dependencies.
+
+Overall, combining Multi-Rate-MoE with adaptive attention yields the best performance, highlighting the importance of integrating continuous-time dynamics, expert specialization, multi-scale modeling, and adaptive feature and temporal selection.
+
+3.5.6Performance Analysis
+The superior ROC and PRC performance of the Multi-Rate-MoE model over both the LSTM and monolithic LNN baselines can be attributed to its enhanced modeling diversity and structured decomposition of temporal dynamics. Unlike LSTM and single-system LNNs, which rely on a single set of parameters to capture all temporal patterns, the Mixture-of-Experts (MoE) framework introduces multiple specialized experts. Each expert focuses on different regions or characteristics of the input space, effectively increasing model diversity. From a statistical learning perspective, the generalization error can be decomposed into bias, variance, and irreducible noise. By leveraging multiple experts, the Multi-Rate-MoE framework reduces both bias (through improved expressiveness) and variance (through conditional computation and expert specialization), leading to better overall predictive performance. This explains the observed improvement in both AUROC and AUPRC. Furthermore, the integration of singular perturbation method enables explicit modeling of multi-scale temporal dynamics, allowing the model to separate fast and slow processes. This structured decomposition further enhances representation capacity compared to monolithic architectures, which attempt to learn all dynamics within a single system.
+
+The Multi-Rate-MoE model augmented with attention achieves the best AUROC and AUPRC performance due to its ability to selectively focus on the most informative temporal and feature-level signals. Attention mechanisms allow the model to dynamically weight historical information, effectively improving long-range dependency modeling and mitigating the information bottleneck commonly observed in recurrent architectures. As a result, the model can better retain and utilize critical past information, leading to more accurate predictions. This combination of expert diversity, multi-scale modeling, and adaptive attention contributes to the strongest performance among all evaluated methods.
+
+3.6Efficiency Analysis
+The memory consumption of different models is shown in Figure 13. We observe that the LSTM baseline incurs the highest memory cost, primarily due to its large hidden state and sequential processing overhead. The monolithic LNN significantly reduces memory usage by modeling continuous-time dynamics with a compact representation.
+
+The Multi-Rate-MoE model further improves efficiency by decomposing the dynamics into multiple experts with different time scales. In particular, fast experts are approximated using simplified quasi-steady-state mappings, which reduce the need for full dynamic simulation and lower computational overhead.
+
+When attention mechanisms are introduced, memory consumption increases moderately. Temporal attention requires storing and computing over historical hidden states, leading to higher memory usage. In contrast, feature-level attention introduces a smaller overhead, as it operates directly on the input features and effectively reduces the effective input dimensionality before entering the LNN.
+
+Overall, Multi-Rate-MoE achieves the best trade-off between performance and efficiency, while attention mechanisms provide additional accuracy gains with acceptable computational overhead.
+
+3.7Effect of Noise Distribution on Model Accuracy
+Clinical time-series data are inherently noisy due to irregular measurements, sensor uncertainty, missing values, and patient variability. The distribution and magnitude of noise can significantly affect model performance and prediction accuracy. Prior work in robust machine learning and time-series forecasting has emphasized the importance of developing models that remain stable under noisy and heterogeneous data distributions.
+
+In standard recurrent models such as LSTM, noise is often propagated through hidden states over time, which may lead to unstable temporal representations and degraded long-range dependency modeling. Similarly, monolithic LNNs rely on a single dynamical system, making them sensitive to heterogeneous noise patterns across different physiological variables.
+
+The proposed Multi-rate-MoE framework improves robustness to noise by decomposing temporal dynamics into multiple experts operating at different time scales. Fast experts primarily capture short-term fluctuations, while slow experts focus on stable long-term physiological trends. This separation reduces interference between transient noise and meaningful clinical dynamics, leading to improved signal-to-noise separation. The effectiveness of ensemble-style learning in improving robustness and reducing variance has also been studied in prior work on relational ensemble classification by Eldardiry Eldardiry (2012). In particular, ensemble-based learning was shown to improve predictive stability by reducing variance across heterogeneous relational domains. This observation is consistent with our findings that multi-expert continuous-time architectures improve robustness under noisy clinical time-series environments.
+
+Furthermore, feature-level attention suppresses irrelevant or noisy variables by assigning lower attention weights to less informative features. Temporal attention also improves robustness by selectively focusing on clinically important historical states rather than uniformly attending to all previous time steps.
+
+As a result, the proposed framework achieves higher prediction accuracy in noisy clinical environments by reducing the propagation of irrelevant information and improving the stability of temporal representations.
+
+Figure 14 further illustrates the robustness of different models under increasing noise levels. As the noise standard deviation increases, the performance of all models gradually decreases. However, the proposed Multi-Rate-MoE and Multi-Rate-MoE with Attention models exhibit significantly slower degradation compared to LSTM and monolithic LNN baselines. In particular, Multi-Rate-MoE with Attention maintains the highest AUROC across all noise levels, demonstrating that multi-scale expert decomposition and attention mechanisms effectively improve robustness to noisy clinical signals.
+
+4Future work
+Future work will focus on improving the flexibility and scalability of the proposed Multi-Rate-MoE framework by developing more adaptive multi-time-scale training strategies and reducing the computational overhead associated with continuous-time dynamics and attention mechanisms.
+
+4.1Decoupled Multi-Time-Scale Training
+In the current Multi-Rate-MoE and Multi-Rate-MoE-Attention models, all experts corresponding to different time scales (fast, intermediate, and slow) are trained jointly in a single optimization process. While this simplifies implementation, it limits the ability of the model to fully exploit the separation of time scales. In particular, fast dynamics and slow dynamics may have different learning behaviors and convergence rates, and joint training can introduce interference between them.
+
+A promising direction for future work is to develop training strategies that decouple the optimization across time scales, such as hierarchical or alternating training schemes. This could allow each expert to specialize more effectively and improve both stability and efficiency.
+
+4.2Learnable Time Constants
+In the current model, the time constants 
+τ
+k
+ associated with each expert are manually specified and remain fixed during training. While this provides a clear separation of time scales, it may not optimally reflect the underlying dynamics of the data.
+
+An important extension is to make the time constants learnable parameters that can be adapted during training. This would allow the model to automatically discover appropriate temporal scales from data, potentially leading to improved performance and better generalization.
+
+5Conclusion
+In this work, we proposed a structured framework for clinical time-series prediction by integrating Liquid Neural Networks (LNNs), Mixture-of-Experts (MoE), and attention mechanisms. To address the limitations of existing models in capturing heterogeneous and multi-scale temporal dynamics, we introduced a Multi-Rate-MoE architecture, where each expert dynamics are modeled at a distinct temporal scale.
+
+Furthermore, we incorporated feature-level and temporal attention mechanisms to improve robustness and enhance the modeling of long-range dependencies. Feature-level attention enables the model to focus on relevant input variables, while temporal attention allows it to selectively utilize important historical states.
+
+Experimental results on sepsis prediction demonstrate that the proposed approach consistently outperforms strong baselines, including LSTM, monolithic LNN, and standard MoE models. In addition, our framework achieves a favorable balance between performance and computational efficiency.
+
+Overall, this work highlights the importance of combining continuous-time modeling, multi-scale decomposition, and adaptive attention for complex time-series analysis. We believe that this framework provides a promising direction for future research in clinical prediction tasks.
+
+Technical Appendices
+Refer to caption
+Figure 1:AUROC curve for the LSTM baseline.
+Refer to caption
+Figure 2:Precision-recall curve for the LSTM baseline.
+Refer to caption
+Figure 3:AUROC curve for the monolithic LNN baseline.
+Refer to caption
+Figure 4:Precision-recall curve for the monolithic LNN baseline.
+Refer to caption
+Figure 5:AUROC curve for the MoE model with LNN experts.
+Refer to caption
+Figure 6:Precision-recall curve for the MoE model with LNN experts.
+Refer to caption
+Figure 7:AUROC curve for the proposed Multi-Rate-MoE model.
+Refer to caption
+Figure 8:Precision-recall curve for the proposed Multi-Rate-MoE model.
+Refer to caption
+Figure 9:AUROC curve for the proposed Multi-Rate-MoE model with attention mechanisms.
+Refer to caption
+Figure 10:Precision-recall curve for the proposed Multi-Rate-MoE model with attention mechanisms.
+Refer to caption
+Figure 11:AUROC curve comparison of LSTM, Monolithic LNN, MoE, Multi-Rate-MOE, and Multi-Rate-MOE with Attention. The proposed Multi-Rate-MOE with Attention achieves the highest AUROC performance.
+Refer to caption
+Figure 12:Precision–Recall curve comparison of different models. The proposed Multi-Rate-MOE variants outperform baseline models in terms of AUPRC.
+Refer to caption
+Figure 13:Memory comparison of different architectures. Multi-Rate-MOE achieves lower memory usage than LSTM, while attention mechanisms introduce moderate additional memory cost.
+Refer to caption
+Figure 14:AUROC under different input noise levels. The proposed Multi-Rate-MoE with Attention model demonstrates stronger robustness and slower performance degradation compared to LSTM and monolithic LNN baselines as noise increases.
+References
+D. Bahdanau, K. Cho, and Y. Bengio (2015)Neural machine translation by jointly learning to align and translate.In International Conference on Learning Representations,Cited by: §1.
+Z. Che, S. Purushotham, K. Cho, D. Sontag, and Y. Liu (2018)Recurrent neural networks for multivariate time series with missing values.Scientific Reports 8 (1), pp. 6085.Cited by: §1, §3.1.
+R. T. Q. Chen, Y. Rubanova, J. Bettencourt, and D. Duvenaud (2018)Neural ordinary differential equations.In Advances in Neural Information Processing Systems,Vol. 31.Cited by: §1, §2.2.
+E. Choi, M. T. Bahadori, J. Sun, J. Kulas, A. Schuetz, and W. F. Stewart (2016)RETAIN: an interpretable predictive model for healthcare using reverse time attention mechanism.In Advances in Neural Information Processing Systems,Vol. 29, pp. 3504–3512.Cited by: §1.
+H. M. Eldardiry (2012)Ensemble classification techniques for relational domains.Ph.D. Thesis, Purdue University.Cited by: §3.7.
+R. Hasani, M. Lechner, A. Amini, D. Rus, and R. Grosu (2021)Liquid time-constant networks.In Proceedings of the AAAI Conference on Artificial Intelligence,Vol. 35, pp. 7657–7666.Cited by: §1, §1, §2.2.
+R. A. Jacobs, M. I. Jordan, S. J. Nowlan, and G. E. Hinton (1991)Adaptive mixtures of local experts.Neural Computation 3 (1), pp. 79–87.External Links: DocumentCited by: §2.3.
+P. Kidger, J. Morrill, J. Foster, and T. Lyons (2020)Neural controlled differential equations for irregular time series.In Advances in Neural Information Processing Systems,Vol. 33, pp. 6696–6707.Cited by: §1, §2.1, §2.2.
+P. V. Kokotović, H. K. Khalil, and J. O’Reilly (1999)Singular perturbation methods in control: analysis and design.Classics in Applied Mathematics, Vol. 25, Society for Industrial and Applied Mathematics.External Links: DocumentCited by: §2.4.
+M. Moor, N. Bennett, D. Plečko, M. Horn, B. Rieck, N. Meinshausen, P. Bühlmann, and K. M. Borgwardt (2023)Predicting sepsis using deep learning across international sites: a retrospective development and validation study.eClinicalMedicine 62, pp. 102124.Cited by: §1, §3.1.
+Y. Rubanova, R. T. Q. Chen, and D. Duvenaud (2019)Latent ordinary differential equations for irregularly-sampled time series.In Advances in Neural Information Processing Systems,Vol. 32.Cited by: §1, §2.1, §2.2.
+T. Saito and M. Rehmsmeier (2015)The precision-recall plot is more informative than the roc plot when evaluating binary classifiers on imbalanced datasets.PLOS ONE 10 (3), pp. e0118432.External Links: DocumentCited by: §3.4.
+N. Shazeer, A. Mirhoseini, K. Maziarz, A. Davis, Q. V. Le, G. Hinton, and J. Dean (2017)Outrageously large neural networks: the sparsely-gated mixture-of-experts layer.In International Conference on Learning Representations,Cited by: §1, §1, §2.3.
+S. Zong, A. Bierly, A. Boker, and H. Eldardiry (2025)Accuracy, memory efficiency and generalization: a comparative study on liquid neural networks and recurrent neural networks.arXiv preprint arXiv:2510.07578.Cited by: §1.
+Checklist
+1. Claims
+Yes. The claims made in the abstract and introduction are consistent with the experimental results presented in Section 3.
+2. Limitations
+Yes. The limitations of the proposed method, including computational overhead of continuous-time dynamics and sensitivity to hyperparameters, are discussed in the paper. The proposed method introduces additional computational overhead due to continuous-time modeling and attention mechanisms. Performance may also depend on hyperparameter selection and dataset characteristics.
+3. Theory, Assumptions and Proofs
+Yes. All model assumptions are clearly described in Section 2, and full mathematical formulations are provided in the supplementary material.
+4. Experimental Result Reproducibility
+Yes. The model architecture, training procedure, and experimental setup are described in sufficient detail to allow reproducibility. Additional details are provided in the appendix.
+5. Open Access to Data and Code
+Not yet.
+6. Experimental Setting/Details
+Yes. All key experimental details, including dataset description, model configuration, hyperparameters, and training procedures, are provided in Section 3.
+7. Experiment Statistical Significance
+No. Error bars and statistical significance tests are not included due to computational constraints.
+8. Experiments Compute Resource
+Yes. Experiments were conducted using GPU-based training. Details regarding computational setup and efficiency are discussed in the paper.
+9. Code of Ethics
+Yes. The research adheres to the NeurIPS Code of Ethics.
+10. Broader Impacts
+Yes. The potential societal impact, including applications in healthcare and associated risks, is discussed.
+11. Safeguards
+N/A. The proposed model does not involve high-risk deployment or release of sensitive systems.
+12. Licenses
+Yes. All datasets and prior work are properly cited, and their usage complies with applicable licenses.
+13. Assets
+N/A. No new datasets or external assets are released.
+14. Crowdsourcing and Human Subjects
+N/A. This work does not involve human subjects or crowdsourced data collection.
+15. IRB Approvals
+N/A. No human subject experiments were conducted.
+16. Declaration of LLM usage
+N/A. Large language models were not used as part of the core methodology.
