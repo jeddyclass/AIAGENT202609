@@ -1,0 +1,51 @@
+import os
+from google.adk.agents import Agent
+from google.adk.models import LiteLlm  # 或 OpenAIClient，取決於 ADK 2.0 的通用適配器
+from .tools import query_order_db, execute_refund
+
+# 讀取模式設定，預設為 cloud
+RUN_MODE = os.getenv("ADK_MODE", "cloud").lower()
+
+if RUN_MODE == "local":
+    # 模式 2：Local (OpenWebUI API -> Ollama gemma4:12b)
+    # OpenWebUI 提供 OpenAI-compatible 端點
+    active_model = LiteLlm(
+        model="openai/gemma4:12b",
+        api_base=os.getenv("LOCAL_OPENWEBUI_URL", "http://172.10.0.22:8080/api"),
+        api_key=os.getenv("LOCAL_OPENWEBUI_KEY", "your-openwebui-api-key")
+    )
+else:
+    # 模式 1：Cloud (Google Gemini)
+    active_model = "gemini-2.5-flash"
+
+# 1. 唯讀查詢 Worker
+order_query_worker = Agent(
+    name="order_query_worker",
+    model=active_model,
+    instruction="""你專責查詢訂單資訊。
+    調用工具獲取資料後，只輸出條列式的重要狀態與金額，嚴禁進行退款操作。
+    【輸出規範】：直接以繁體中文回覆顧客最終結論。嚴禁輸出你的思考過程、推理日誌或內心獨白。""",
+    tools=[query_order_db]
+)
+
+# 2. 退款操作 Worker
+refund_worker = Agent(
+    name="refund_worker",
+    model=active_model,
+    instruction="""你負責準備退款申請。
+    在調用 execute_refund 工具前，必須確認訂單存在且金額正確。
+    【輸出規範】：直接以繁體中文回覆顧客最終結論。嚴禁輸出你的思考過程、推理日誌或內心獨白。""",
+    tools=[execute_refund]
+)
+
+# 3. 頂層接待與路由 (Root Agent)
+root_agent = Agent(
+    name="customer_service_root",
+    model=active_model,
+    instruction="""你是客服經理。
+    1. 當顧客詢問訂單現況，委派給 order_query_worker。
+    2. 當顧客要求退款，先委派 order_query_worker 確認狀態，確認屬實後再委派給 refund_worker。
+    3. 不可自己編造訂單與退款資訊。
+    【輸出規範】：直接以繁體中文回覆顧客最終結論。嚴禁輸出你的思考過程、推理日誌或內心獨白。""",
+    sub_agents=[order_query_worker, refund_worker]
+)

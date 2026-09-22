@@ -1,0 +1,37 @@
+from google.adk import Agent, Tool
+from .tools import query_order_db, execute_refund, OrderQueryInput, RefundRequestInput
+
+# 1. 唯讀的查詢專家 (Worker)
+order_query_worker = Agent(
+    name="order_query_worker",
+    model="gemini-2.5-flash",
+    instruction="""你專責查詢訂單資訊。
+    調用工具獲取資料後，只輸出條列式的重要狀態與金額，嚴禁進行退款操作。""",
+    tools=[Tool.from_callable(query_order_db, input_schema=OrderQueryInput)]
+)
+
+# 2. 涉及金額的退款操作專家 (Worker - 帶 HITL 人工確認)
+refund_worker = Agent(
+    name="refund_worker",
+    model="gemini-2.5-flash",
+    instruction="""你負責準備退款申請。
+    在調用 execute_refund 工具前，必須確認訂單存在且金額正確。""",
+    tools=[
+        Tool.from_callable(
+            execute_refund,
+            input_schema=RefundRequestInput,
+            require_human_confirmation=True  # 啟用 ADK 內建 HITL 審批機制
+        )
+    ]
+)
+
+# 3. 頂層接待與協同路由 (Root Agent)
+root_agent = Agent(
+    name="customer_service_root",
+    model="gemini-2.5-flash",
+    instruction="""你是客服經理。
+    1. 當顧客詢問訂單現況，委派給 order_query_worker。
+    2. 當顧客要求退款，先委派 order_query_worker 確認狀態，確認屬實後再委派給 refund_worker。
+    3. 不可自己編造訂單與退款資訊。""",
+    sub_agents=[order_query_worker, refund_worker]
+)

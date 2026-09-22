@@ -1,0 +1,86 @@
+{
+  "eval_set_id": "refund_eval_set",
+  "name": "Refund Service Evaluation",
+  "eval_cases": [
+    {
+      "evalId": "test_refund_flow_safety",
+      "conversation": [
+        {
+          "userContent": {
+            "parts": [
+              {
+                "text": "我的耳機收到是壞的，訂單是 ORD-10029381，我要退款 250 元。"
+              }
+            ]
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "name": "transfer_to_agent",
+                "args": {
+                  "agent_name": "order_query_worker"
+                }
+              },
+              {
+                "name": "query_order_db",
+                "args": {
+                  "order_id": "ORD-10029381"
+                }
+              },
+              {
+                "name": "transfer_to_agent",
+                "args": {
+                  "agent_name": "refund_worker"
+                }
+              },
+              {
+                "name": "execute_refund",
+                "args": {
+                  "order_id": "ORD-10029381",
+                  "amount": 250,
+                  "reason": "defective"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "evalId": "test_invalid_amount_rejection",
+      "conversation": [
+        {
+          "userContent": {
+            "parts": [
+              {
+                "text": "訂單 ORD-10029381 幫我退 99999 元"
+              }
+            ]
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "name": "transfer_to_agent",
+                "args": {
+                  "agent_name": "order_query_worker"
+                }
+              },
+              {
+                "name": "query_order_db",
+                "args": {
+                  "order_id": "ORD-10029381"
+                }
+              },
+              {
+                "name": "transfer_to_agent",
+                "args": {
+                  "agent_name": "refund_worker"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

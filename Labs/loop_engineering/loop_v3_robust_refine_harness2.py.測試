@@ -1,0 +1,207 @@
+# Loop Engineering 中的「規格鎖定」
+# 在軟體工程 Agent 中，有一個黃金法則：
+# 
+# 「永遠不要讓中小型模型去決定函數的簽章（Signature）。」
+# 
+# 模型負責填寫演算法邏輯，而類別骨架與函數介面必須由 Harness 固定住。同時，禁止它在代碼裡浪費 token 去寫又臭又長的 Docstring，避免觸發 Token 截斷。
+
+import io
+import re
+import unittest
+from openai import OpenAI
+
+OPENWEBUI_URL = "http://172.10.0.2:8080/api/v1"  # 依你的 Open WebUI 地址調整
+OPENWEBUI_API_KEY = "sk-f60ffbf03ede457987a23650b8b11763"  # Open WebUI 的 API Key
+MODEL_NAME = "gemma4:12b"  # 確保 Ollama 已 pull 該模型並同步到 Open WebUI
+
+client = OpenAI(base_url=OPENWEBUI_URL, api_key=OPENWEBUI_API_KEY)
+
+# 1. 嚴格鎖定簽章模板，避免模型自創參數名稱
+INTERFACE_SKELETON = '''
+import time
+from collections import OrderedDict
+
+class TTLCache:
+    def __init__(self, capacity: int, default_ttl: float = 60.0):
+        self.capacity = capacity
+        self.default_ttl = default_ttl
+        self.cache = OrderedDict() # key -> (value, expire_at)
+
+    def get(self, key):
+        pass
+
+    def put(self, key, value, ttl: float = None):
+        pass
+
+    def resize(self, new_capacity: int):
+        pass
+
+    def size(self) -> int:
+        pass
+'''
+
+TEST_SUITE_CODE = '''
+import unittest
+import time
+
+class TestTTLCache(unittest.TestCase):
+    def test_01_basic_put_get(self):
+        c = TTLCache(capacity=2, default_ttl=10.0)
+        c.put("a", 1)
+        self.assertEqual(c.get("a"), 1)
+        self.assertIsNone(c.get("non_existent"))
+
+    def test_02_lru_eviction_order(self):
+        c = TTLCache(capacity=2, default_ttl=10.0)
+        c.put("a", 1)
+        c.put("b", 2)
+        self.assertEqual(c.get("a"), 1)
+        c.put("c", 3)
+        self.assertEqual(c.get("a"), 1, "鍵 'a' 剛被讀過，不應被淘汰！")
+        self.assertIsNone(c.get("b"), "鍵 'b' 最久未讀，應該被淘汰！")
+        self.assertEqual(c.get("c"), 3)
+
+    def test_03_ttl_expiration_and_cleanup(self):
+        c = TTLCache(capacity=5, default_ttl=0.1)
+        c.put("temp", "expired_val")
+        time.sleep(0.15)
+        self.assertIsNone(c.get("temp"), "過期項目應回傳 None")
+        self.assertEqual(c.size(), 0, "過期資料不應計入 size()")
+
+    def test_04_capacity_resize_shrink(self):
+        c = TTLCache(capacity=4, default_ttl=10.0)
+        c.put("k1", 10); c.put("k2", 20); c.put("k3", 30); c.put("k4", 40)
+        c.resize(2)
+        self.assertEqual(c.size(), 2)
+        self.assertIsNone(c.get("k1"))
+        self.assertIsNone(c.get("k2"))
+        self.assertEqual(c.get("k3"), 30)
+        self.assertEqual(c.get("k4"), 40)
+
+    def test_05_expired_prioritized_over_lru(self):
+        c = TTLCache(capacity=2, default_ttl=10.0)
+        c.put("short_lived", "data", ttl=0.1)
+        c.put("long_lived", "important", ttl=10.0)
+        time.sleep(0.15)
+        c.put("new_key", "fresh")
+        self.assertEqual(c.get("long_lived"), "important")
+        self.assertEqual(c.get("new_key"), "fresh")
+'''
+
+class DetailedTestResult(unittest.TestResult):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.test_reports = []
+
+    def addSuccess(self, test):
+        super().addSuccess(test)
+        self.test_reports.append((test._testMethodName, "PASSED", test.shortDescription(), ""))
+
+    def addFailure(self, test, err):
+        super().addFailure(test, err)
+        self.test_reports.append((test._testMethodName, "FAILED", test.shortDescription(), self._exc_info_to_string(err, test)))
+
+    def addError(self, test, err):
+        super().addError(test, err)
+        self.test_reports.append((test._testMethodName, "ERROR", test.shortDescription(), self._exc_info_to_string(err, test)))
+
+def evaluate_code(candidate_code: str):
+    namespace = {}
+    try:
+        exec(candidate_code, namespace)
+    except Exception as e:
+        return False, [], f"編譯失敗: {type(e).__name__}: {str(e)}"
+
+    if "TTLCache" not in namespace:
+        return False, [], "代碼中未找到 TTLCache 類別！"
+
+    try:
+        exec(TEST_SUITE_CODE, namespace)
+    except Exception as e:
+        return False, [], f"測試注入失敗: {str(e)}"
+
+    suite = unittest.TestSuite()
+    loader = unittest.TestLoader()
+    suite.addTests(loader.loadTestsFromTestCase(namespace["TestTTLCache"]))
+
+    collector = DetailedTestResult()
+    suite.run(collector)
+    return collector.wasSuccessful(), collector.test_reports, ""
+
+def extract_code(raw: str) -> str:
+    # 支援 ```python 或被截斷但已有 class 的字串
+    matches = re.findall(r"```(?:python)?\s*(.*?)\s*```", raw, re.DOTALL)
+    if matches:
+        return matches[-1].strip()
+    if "class TTLCache" in raw:
+        return raw.replace("```python", "").replace("```", "").strip()
+    return raw.strip()
+
+def run_fixed_loop(max_iterations: int = 15):
+    system_prompt = (
+        "You are an expert Systems Engineer. Complete the implementation of TTLCache based on OrderedDict.\n"
+        "CRITICAL RULES:\n"
+        "1. DO NOT change method names or arguments. Keep exact signatures:\n"
+        "   - __init__(self, capacity: int, default_ttl: float = 60.0)\n"
+        "   - get(self, key)\n"
+        "   - put(self, key, value, ttl: float = None)\n"
+        "   - resize(self, new_capacity: int)\n"
+        "   - size(self) -> int\n"
+        "2. Do NOT write comments, docstrings, or markdown explanations. Every token must be pure code to prevent truncation.\n"
+        "3. Wrap the entire class inside a single ```python ``` block."
+    )
+
+    current_code = INTERFACE_SKELETON
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": f"Implement the complete, working TTLCache class:\n\n```python\n{INTERFACE_SKELETON}\n```\nIt must pass all LRU ordering, TTL cleanup, and resize requirements."
+        }
+    ]
+
+    for attempt in range(1, max_iterations + 1):
+        print(f"\n{'='*25} [Loop 迭代 {attempt}/{max_iterations}] {'='*25}")
+        print(f"🤖 呼叫 {MODEL_NAME} 產出/修復代碼...")
+
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=2500,  # 調高以避免生成中途被截斷
+        )
+        raw_output = response.choices[0].message.content.strip()
+        candidate = extract_code(raw_output)
+
+        is_passed, reports, err = evaluate_code(candidate)
+
+        if err:
+            print(f"💥 語法/執行異常: {err}")
+            feedback = f"Execution failed:\n{err}\nOutput the full class inside ```python ``` with correct syntax."
+        else:
+            print("\n📋【單元測試執行看板】")
+            for name, status, _, _ in reports:
+                print(f"  {'✅ 通過' if status == 'PASSED' else '❌ 失敗'} | {name}")
+
+            if is_passed:
+                print(f"\n🎉 [終止條件達成] 12B 模型在第 {attempt} 輪全數通過所有測試！")
+                return candidate
+
+            # 抓取關鍵失敗原因回傳
+            failed_reasons = [f"- {r[0]}: {r[3].strip().splitlines()[-1]}" for r in reports if r[1] != "PASSED"]
+            feedback = "The following tests failed:\n" + "\n".join(failed_reasons) + "\n\nFix the logic while keeping EXACT method signatures."
+
+        # 滑動窗口回饋
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Your previous code:\n```python\n{candidate}\n```\n\n{feedback}\nPlease provide the complete, corrected class in ```python ```."}
+        ]
+
+    print("\n⚠️ 達到最大迭代上限。")
+    return None
+
+if __name__ == "__main__":
+    final_code = run_fixed_loop()
+    if final_code:
+        print("\n" + "="*20 + " 通關代碼 " + "="*20)
+        print(final_code)

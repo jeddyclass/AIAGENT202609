@@ -1,0 +1,25 @@
+from pydantic import BaseModel, Field
+from typing import Literal
+
+class OrderQueryInput(BaseModel):
+    order_id: str = Field(..., description="訂單編號，如 ORD-10029381")
+
+def query_order_db(data: OrderQueryInput) -> dict:
+    """查詢訂單詳情與出貨狀態"""
+    # 模擬資料庫查詢
+    return {
+        "order_id": data.order_id,
+        "amount": 250.0,
+        "status": "DELIVERED",
+        "item": "無線降噪耳機"
+    }
+
+class RefundRequestInput(BaseModel):
+    order_id: str = Field(..., description="訂單編號")
+    amount: float = Field(..., gt=0, le=500.0, description="退款金額")
+    reason: Literal["defective", "missing_item"] = Field(..., description="原因")
+
+def execute_refund(data: RefundRequestInput) -> dict:
+    """高風險操作：真正執行退款退帳"""
+    return {"status": "REFUNDED", "tx_id": "TX-998811", "amount": data.amount}
+

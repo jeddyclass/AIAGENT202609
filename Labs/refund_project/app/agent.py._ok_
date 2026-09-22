@@ -1,0 +1,33 @@
+from google.adk.agents import Agent
+# 如果你的版本支援直接傳入函數，直接引用 tools 中的定義即可
+from .tools import query_order_db, execute_refund
+
+# 1. 唯讀查詢 Worker
+order_query_worker = Agent(
+    name="order_query_worker",
+    model="gemini-2.5-flash",
+    instruction="""你專責查詢訂單資訊。
+    調用工具獲取資料後，只輸出條列式的重要狀態與金額，嚴禁進行退款操作。""",
+    tools=[query_order_db]  # 直接傳入函式，ADK 會自動解析 Pydantic 型別
+)
+
+# 2. 退款操作 Worker
+refund_worker = Agent(
+    name="refund_worker",
+    model="gemini-2.5-flash",
+    instruction="""你負責準備退款申請。
+    在調用 execute_refund 工具前，必須確認訂單存在且金額正確。""",
+    tools=[execute_refund]
+)
+
+# 3. 頂層接待與路由 (Root Agent)
+root_agent = Agent(
+    name="customer_service_root",
+    model="gemini-2.5-flash",
+    instruction="""你是客服經理。
+    1. 當顧客詢問訂單現況，委派給 order_query_worker。
+    2. 當顧客要求退款，先委派 order_query_worker 確認狀態，確認屬實後再委派給 refund_worker。
+    3. 不可自己編造訂單與退款資訊。""",
+    sub_agents=[order_query_worker, refund_worker]
+)
+
